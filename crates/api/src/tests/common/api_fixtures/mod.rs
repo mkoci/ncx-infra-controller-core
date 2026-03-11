@@ -2173,14 +2173,18 @@ pub async fn simulate_hardware_health_report(
     host_machine_id: &MachineId,
     health_report: health_report::HealthReport,
 ) {
-    use rpc::forge::HardwareHealthReport;
     use rpc::forge::forge_server::Forge;
+    use rpc::forge::{HealthReportOverride, InsertHealthReportOverrideRequest};
     use tonic::Request;
+
     let _ = env
         .api
-        .record_hardware_health_report(Request::new(HardwareHealthReport {
+        .insert_health_report_override(Request::new(InsertHealthReportOverrideRequest {
             machine_id: Some(*host_machine_id),
-            report: Some(health_report.into()),
+            r#override: Some(HealthReportOverride {
+                report: Some(health_report.into()),
+                ..Default::default()
+            }),
         }))
         .await
         .unwrap();
