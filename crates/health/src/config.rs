@@ -125,7 +125,7 @@ pub struct SinksConfig {
 
     /// Health override sink: sends health override events to Carbide API.
     #[serde(alias = "carbide_override")]
-    pub health_override: Configurable<CarbideApiConnectionConfig>,
+    pub health_override: Configurable<HealthOverrideSinkConfig>,
 }
 
 impl Default for SinksConfig {
@@ -133,7 +133,7 @@ impl Default for SinksConfig {
         Self {
             tracing: Configurable::Enabled(TracingSinkConfig::default()),
             prometheus: Configurable::Enabled(PrometheusSinkConfig::default()),
-            health_override: Configurable::Enabled(CarbideApiConnectionConfig::default()),
+            health_override: Configurable::Enabled(HealthOverrideSinkConfig::default()),
         }
     }
 }
@@ -170,6 +170,25 @@ impl Default for CarbideApiConnectionConfig {
             client_cert: "/var/run/secrets/spiffe.io/tls.crt".to_string(),
             client_key: "/var/run/secrets/spiffe.io/tls.key".to_string(),
             api_url: Url::parse("https://carbide-api.forge-system.svc.cluster.local:1079").unwrap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HealthOverrideSinkConfig {
+    #[serde(flatten)]
+    pub connection: CarbideApiConnectionConfig,
+
+    /// Number of concurrent workers submitting reports to Carbide API.
+    pub workers: usize,
+}
+
+impl Default for HealthOverrideSinkConfig {
+    fn default() -> Self {
+        Self {
+            connection: CarbideApiConnectionConfig::default(),
+            workers: 4,
         }
     }
 }
@@ -506,6 +525,12 @@ impl Config {
             );
         }
 
+        if let Configurable::Enabled(health_override) = &self.sinks.health_override
+            && health_override.workers == 0
+        {
+            return Err("sinks.health_override.workers must be greater than 0".to_string());
+        }
+
         self.metrics_addr()?;
 
         Ok(())
@@ -598,8 +623,12 @@ mod tests {
             panic!("carbide api empty for sources")
         }
 
-        if let Configurable::Enabled(ref carbide_api) = config.sinks.health_override {
-            assert_eq!(carbide_api.root_ca, "/var/run/secrets/spiffe.io/ca.crt");
+        if let Configurable::Enabled(ref health_override) = config.sinks.health_override {
+            assert_eq!(
+                health_override.connection.root_ca,
+                "/var/run/secrets/spiffe.io/ca.crt"
+            );
+            assert_eq!(health_override.workers, 8);
         } else {
             panic!("health override sink is disabled")
         }
@@ -756,6 +785,14 @@ cache_size = 50
         config.rate_limit = Configurable::Enabled(RateLimitConfig::default());
         config.processors.leak_detection = Configurable::Enabled(LeakDetectionProcessorConfig {
             minimum_alerts_per_report: 0,
+        });
+        assert!(config.validate().is_err());
+
+        config.processors.leak_detection =
+            Configurable::Enabled(LeakDetectionProcessorConfig::default());
+        config.sinks.health_override = Configurable::Enabled(HealthOverrideSinkConfig {
+            workers: 0,
+            ..HealthOverrideSinkConfig::default()
         });
         assert!(config.validate().is_err());
     }
@@ -977,5 +1014,10 @@ switch_serial = "SN-SW-001"
                 .as_deref(),
             Some("SN-SWITCH-001")
         );
+        if let Configurable::Enabled(ref health_override) = config.sinks.health_override {
+            assert_eq!(health_override.workers, 4);
+        } else {
+            panic!("health override sink is disabled");
+        }
     }
 }

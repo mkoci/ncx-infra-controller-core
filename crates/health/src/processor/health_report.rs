@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use nv_redfish::resource::Health as BmcHealth;
 
@@ -203,7 +205,7 @@ impl EventProcessor for HealthReportProcessor {
                     return Vec::new();
                 };
                 let report = HealthReport {
-                    source: ReportSource::Health,
+                    source: ReportSource::BmcSensors,
                     observed_at: Some(chrono::Utc::now()),
                     successes: window.successes,
                     alerts: window.alerts,
@@ -216,7 +218,7 @@ impl EventProcessor for HealthReportProcessor {
                     "Sending hardware health report"
                 );
 
-                return vec![CollectorEvent::HealthReport(report)];
+                return vec![CollectorEvent::HealthReport(Arc::new(report))];
             }
             CollectorEvent::Log(_)
             | CollectorEvent::Firmware(_)
@@ -293,7 +295,7 @@ mod tests {
             panic!("expected health report event");
         };
 
-        assert_eq!(report.source, ReportSource::Health);
+        assert_eq!(report.source, ReportSource::BmcSensors);
         assert!(report.successes.is_empty());
         assert_eq!(report.alerts.len(), 1);
     }

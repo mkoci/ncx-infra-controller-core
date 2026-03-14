@@ -327,13 +327,11 @@ impl<B: Bmc> ExploredComputerSystem<B> {
             // interface from boot options as workaround.
             if let Some(oob_iface) = self.oob_interface_from_boot_options()? {
                 result.push(oob_iface);
-                Ok(result)
             } else {
-                Err(Error::BmcNotProvided("oob interface for dpu"))
+                tracing::warn!("Error getting OOB interface for the DPU");
             }
-        } else {
-            Ok(result)
         }
+        Ok(result)
     }
 
     fn oob_interface_from_boot_options(&self) -> Result<Option<ModelEthernetInterface>, Error<B>> {
@@ -420,6 +418,7 @@ impl<B: Bmc> ExploredComputerSystem<B> {
             .map(|actual| match expected.value {
                 hw::BiosAttrValue::Str(v) => actual.str_value() == Some(v),
                 hw::BiosAttrValue::Bool(v) => actual.bool_value() == Some(v),
+                hw::BiosAttrValue::Int(v) => actual.integer_value() == Some(v),
                 hw::BiosAttrValue::AnyStr(v) => v.iter().any(|v| actual.str_value() == Some(v)),
             })
     }
@@ -432,6 +431,7 @@ impl<B: Bmc> ExploredComputerSystem<B> {
             && !match expected.value {
                 hw::BiosAttrValue::Bool(v) => actual.bool_value() == Some(v),
                 hw::BiosAttrValue::Str(v) => actual.str_value() == Some(v),
+                hw::BiosAttrValue::Int(v) => actual.integer_value() == Some(v),
                 hw::BiosAttrValue::AnyStr(v) => v.iter().any(|v| actual.str_value() == Some(v)),
             }
         {
@@ -442,6 +442,7 @@ impl<B: Bmc> ExploredComputerSystem<B> {
                     .str_value()
                     .map(|v| v.to_string())
                     .or_else(|| actual.bool_value().map(|v| v.to_string()))
+                    .or_else(|| actual.integer_value().map(|v| v.to_string()))
                     .unwrap_or_else(|| "unexpected type".to_string()),
             })
         } else {

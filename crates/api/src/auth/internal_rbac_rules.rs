@@ -130,8 +130,6 @@ impl InternalRBACRules {
             vec![ForgeAdminCLI, Agent, Machineatron, SiteAgent],
         );
         x.perm("RecordDpuNetworkStatus", vec![Agent, Machineatron]);
-        x.perm("RecordHardwareHealthReport", vec![Health]);
-        x.perm("GetHardwareHealthReport", vec![]);
         x.perm(
             "ListHealthReportOverrides",
             vec![ForgeAdminCLI, Health, Ssh, SshRs],
@@ -379,6 +377,7 @@ impl InternalRBACRules {
         x.perm("GetRackFirmware", vec![ForgeAdminCLI]);
         x.perm("ApplyRackFirmware", vec![ForgeAdminCLI]);
         x.perm("GetRackFirmwareJobStatus", vec![ForgeAdminCLI]);
+        x.perm("GetRackFirmwareHistory", vec![ForgeAdminCLI]);
         x.perm("RebootCompleted", vec![Machineatron, Scout]);
         x.perm("PersistValidationResult", vec![Scout]);
         x.perm("GetMachineValidationResults", vec![ForgeAdminCLI, Scout]);
