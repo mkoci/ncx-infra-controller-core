@@ -723,6 +723,7 @@ impl EndpointExplorer for BmcEndpointExplorer {
                             } else if let Some(em) = expected_machine {
                                 (em.data.bmc_username.clone(), em.data.bmc_password.clone())
                             } else {
+                                tracing::debug!(%bmc_ip_address, "No credentials available for Lite-On workaround, returning original probe error");
                                 return Err(e);
                             }
                         }
