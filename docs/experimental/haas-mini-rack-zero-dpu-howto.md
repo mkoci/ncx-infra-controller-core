@@ -65,8 +65,7 @@ for rack mode with the static IP branch:
 ```bash
 # ~/environments/scripts/setup/mini_devenv.sh
 
-export GITHUB_USER=mkoci             # use mkoci's fork (static IP + zero-DPU bypass)
-                                     # alternatively: mrgalaxy-source (static IP only, no zero-DPU)
+export GITHUB_USER=mkoci             # mkoci's fork includes static IP + zero-DPU bypass
 # export USE_GITLAB=1               # do NOT set — we are pulling from github, not gitlab
 export CARBIDE_BRANCH=              # overridden below
 export AGE_SECRET_KEY=AGE-SECRET-KEY-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -76,8 +75,7 @@ export ROOT_EXEC_CMD=sudo
 export CARGO_HOME=$HOME/.cargo
 
 export GITHUB_REPO_NAME=bare-metal-manager-core
-export CARBIDE_BRANCH=mkoci/static-ip-plus-zero-dpu  # includes zero-DPU bypass
-                                                      # use mrgalaxy/static-ip if using mrgalaxy-source fork
+export CARBIDE_BRANCH=mkoci/static-ip-plus-zero-dpu  # static IP + zero-DPU bypass
 
 # rack mode — LOCAL_DEV is intentionally NOT set. this deploys via forged/k3s,
 # not skaffold. do NOT run post_run.sh (that's local-dev only).
@@ -92,9 +90,9 @@ export NO_TEST=1  # skip cargo tests — they fail in this config and aren't rel
 ```
 
 Important differences from the Confluence local-dev guide:
-- `GITHUB_USER=mrgalaxy-source` — clones the static IP fork, not your own or NVIDIA upstream
+- `GITHUB_USER=mkoci` — clones the fork with both static IP and zero-DPU bypass
 - `GITHUB_REPO_NAME=bare-metal-manager-core` — the repo was renamed from `carbide-core` but the fork still uses the old name
-- `CARBIDE_BRANCH=mrgalaxy/static-ip` — the static IP feature branch
+- `CARBIDE_BRANCH=mkoci/static-ip-plus-zero-dpu` — includes both static IP and zero-DPU bypass
 - `LOCAL_DEV` is **not set** — this deploys in rack mode via forged, not skaffold
 - `USE_GITLAB` is **not set** — we pull from github (the static IP branch isn't on gitlab)
 - `NO_TEST=1` — tests will fail and aren't useful during bring-up
@@ -131,6 +129,11 @@ alias forge-admin-cli='kubectl exec -n forge-system deploy/carbide-api \
 ---
 
 ## 2. The Zero-DPU Problem (and Our Crude Fix)
+
+> **If you're using the `mkoci/static-ip-plus-zero-dpu` branch, these code
+> changes are already applied.** This section explains what they do and why,
+> so you understand the trade-offs. If you're building from `mrgalaxy/static-ip`
+> directly, you'll need to apply these patches yourself.
 
 The static IP branch handles BMC registration without DHCP — that part works
 great. But the site explorer has a second gate: it counts BlueField DPUs via
@@ -217,6 +220,11 @@ This comes from the 72x1 deployment ([rms-carbide commit `7aed855`](https://gitl
 ---
 
 ## 3. Build and Deploy
+
+> **If you used `mkoci/static-ip-plus-zero-dpu` in your env file,
+> `first_run.sh` already built and deployed everything — skip to section 4.**
+> This section is for when you need to rebuild after making additional code
+> changes.
 
 ### Build the binaries
 
