@@ -301,18 +301,18 @@ pub async fn discover_dhcp(
         .await?;
     }
 
-    if let Some(machine_id) = machine_interface.machine_id {
-        // Can't block host's DHCP handling completely to support Zero-DPU.
-        if machine_id.machine_type().is_host()
-            && let Some(instance_id) =
-                db::instance::find_id_by_machine_id(&mut txn, &machine_id).await?
-        {
-            // An instance is associated with machine id. DPU must process it.
-            return Err(CarbideError::internal(format!(
-                "DHCP request received for instance: {instance_id}. Ignoring."
-            )));
-        }
-    }
+    // if let Some(machine_id) = machine_interface.machine_id {
+    //     // Can't block host's DHCP handling completely to support Zero-DPU.
+    //     if machine_id.machine_type().is_host()
+    //         && let Some(instance_id) =
+    //             db::instance::find_id_by_machine_id(&mut txn, &machine_id).await?
+    //     {
+    //         // An instance is associated with machine id. DPU must process it.
+    //         return Err(CarbideError::internal(format!(
+    //             "DHCP request received for instance: {instance_id}. Ignoring."
+    //         )));
+    //     }
+    // }
 
     // Save vendor string, this is allowed to fail due to dhcp happening more than once on the same machine/vendor string
     if let Some(vendor) = vendor_string {
