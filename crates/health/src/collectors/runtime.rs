@@ -30,7 +30,7 @@ use nv_redfish::bmc_http::reqwest::{BmcError, Client as ReqwestClient};
 use nv_redfish::bmc_http::{CacheSettings, HttpBmc};
 use nv_redfish::core::Bmc;
 use nv_redfish::event_service::EventStreamPayload;
-use prometheus::{Counter, Gauge, Histogram, HistogramOpts, IntCounter, Opts};
+use prometheus::{Counter, Gauge, Histogram, HistogramOpts, IntCounter, IntGauge, Opts};
 use rand::Rng;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -172,14 +172,8 @@ pub async fn open_sse_stream<B: Bmc + 'static>(bmc: Arc<B>) -> Result<SseStream,
     ))
 }
 
-// SSE EventSource readyState values for the connection_state gauge
-// ref: https://html.spec.whatwg.org/multipage/server-sent-events.html#dom-eventsource-readystate
-const STREAM_STATE_CONNECTING: f64 = 0.0;
-const STREAM_STATE_OPEN: f64 = 1.0;
-const STREAM_STATE_CLOSED: f64 = 2.0;
-
 pub struct StreamMetrics {
-    connection_state: Gauge,
+    connected: IntGauge,
     reconnections_total: Counter,
     items_processed_total: Counter,
     stream_errors_total: Counter,
@@ -191,14 +185,14 @@ impl StreamMetrics {
         prefix: &str,
         const_labels: HashMap<String, String>,
     ) -> Result<Self, HealthError> {
-        let connection_state = Gauge::with_opts(
+        let connected = IntGauge::with_opts(
             Opts::new(
-                format!("{prefix}_stream_connection_state"),
-                "Stream connection state per SSE readyState: 0=CONNECTING, 1=OPEN, 2=CLOSED",
+                format!("{prefix}_stream_connected"),
+                "1 while the stream is connected, 0 otherwise",
             )
             .const_labels(const_labels.clone()),
         )?;
-        registry.register(Box::new(connection_state.clone()))?;
+        registry.register(Box::new(connected.clone()))?;
 
         let reconnections_total = Counter::with_opts(
             Opts::new(
@@ -228,11 +222,28 @@ impl StreamMetrics {
         registry.register(Box::new(stream_errors_total.clone()))?;
 
         Ok(Self {
-            connection_state,
+            connected,
             reconnections_total,
             items_processed_total,
             stream_errors_total,
         })
+    }
+}
+
+/// RAII guard: increments `active_sse_connections` on construction, decrements on drop.
+/// Ensures every exit path from a connected stream (cancel, error, end, reconnect) dec's.
+struct SseConnectionGuard(IntGauge);
+
+impl SseConnectionGuard {
+    fn inc(gauge: IntGauge) -> Self {
+        gauge.inc();
+        Self(gauge)
+    }
+}
+
+impl Drop for SseConnectionGuard {
+    fn drop(&mut self) {
+        self.0.dec();
     }
 }
 
@@ -282,6 +293,13 @@ pub struct CollectorStartContext {
     pub iteration_interval: Duration,
     pub collector_registry: Arc<CollectorRegistry>,
     pub metrics_manager: Arc<MetricsManager>,
+    pub client: ReqwestClient,
+    pub health_options: Arc<AppConfig>,
+}
+
+pub struct StreamingCollectorStartContext {
+    pub backoff_config: BackoffConfig,
+    pub collector_registry: Arc<CollectorRegistry>,
     pub client: ReqwestClient,
     pub health_options: Arc<AppConfig>,
 }
@@ -434,15 +452,19 @@ impl Collector {
         endpoint: Arc<BmcEndpoint>,
         config: S::Config,
         data_sink: Arc<dyn DataSink>,
-        backoff_config: BackoffConfig,
-        collector_registry: Arc<CollectorRegistry>,
-        client: ReqwestClient,
-        health_options: &AppConfig,
+        start_context: StreamingCollectorStartContext,
     ) -> Result<Self, HealthError> {
+        let StreamingCollectorStartContext {
+            backoff_config,
+            collector_registry,
+            client,
+            health_options,
+        } = start_context;
+
         let cancel_token = CancellationToken::new();
         let cancel_clone = cancel_token.clone();
 
-        let bmc = create_bmc(client, &endpoint, health_options)?;
+        let bmc = create_bmc(client, &endpoint, &health_options)?;
 
         let mut collector = S::new_runner(bmc, endpoint.clone(), config)?;
         let event_context = EventContext::from_endpoint(&endpoint, collector.collector_type());
@@ -465,30 +487,19 @@ impl Collector {
             let mut backoff = ExponentialBackoff::new(&backoff_config);
 
             loop {
-                metrics.connection_state.set(STREAM_STATE_CONNECTING);
                 tracing::info!(
                     collector_type,
                     endpoint = ?endpoint.addr,
                     "streaming collector connecting"
                 );
 
-                let Some(stream) = cancel_clone.run_until_cancelled(collector.connect()).await
+                let Some(stream_result) =
+                    cancel_clone.run_until_cancelled(collector.connect()).await
                 else {
-                    metrics.connection_state.set(STREAM_STATE_CLOSED);
                     return;
                 };
 
-                let mut stream = match stream {
-                    Ok(s) => {
-                        metrics.connection_state.set(STREAM_STATE_OPEN);
-                        backoff.reset();
-                        tracing::info!(
-                            collector_type,
-                            endpoint = ?endpoint.addr,
-                            "streaming collector connected"
-                        );
-                        s
-                    }
+                match stream_result {
                     Err(e) => {
                         metrics.reconnections_total.inc();
                         tracing::error!(
@@ -497,66 +508,64 @@ impl Collector {
                             endpoint = ?endpoint.addr,
                             "streaming collector connection failed"
                         );
-                        let delay = backoff.next_delay();
-                        if cancel_clone
-                            .run_until_cancelled(tokio::time::sleep(delay))
-                            .await
-                            .is_none()
-                        {
-                            metrics.connection_state.set(STREAM_STATE_CLOSED);
-                            return;
-                        }
-                        continue;
                     }
-                };
-
-                loop {
-                    let Some(item) = cancel_clone.run_until_cancelled(stream.next()).await else {
-                        metrics.connection_state.set(STREAM_STATE_CLOSED);
+                    Ok(mut stream) => {
+                        // the guard lives exactly as long as we hold an open stream; Drop
+                        // handles dec for every exit path (shutdown, error, stream end).
+                        let _conn_guard = SseConnectionGuard::inc(metrics.connected.clone());
+                        backoff.reset();
                         tracing::info!(
                             collector_type,
                             endpoint = ?endpoint.addr,
-                            "streaming collector shutting down"
+                            "streaming collector connected"
                         );
-                        return;
-                    };
 
-                    match item {
-                        Some(Ok(event)) => {
-                            metrics.items_processed_total.inc();
-                            data_sink.handle_event(&event_context, &event);
-                        }
-                        Some(Err(e)) => {
-                            metrics.stream_errors_total.inc();
-                            metrics.reconnections_total.inc();
-                            tracing::error!(
-                                error = ?e,
-                                collector_type,
-                                endpoint = ?endpoint.addr,
-                                "streaming collector stream error, reconnecting"
-                            );
-                            break;
-                        }
-                        None => {
-                            tracing::info!(
-                                collector_type,
-                                endpoint = ?endpoint.addr,
-                                "streaming collector stream ended, reconnecting"
-                            );
-                            break;
+                        loop {
+                            let Some(item) = cancel_clone.run_until_cancelled(stream.next()).await
+                            else {
+                                tracing::info!(
+                                    collector_type,
+                                    endpoint = ?endpoint.addr,
+                                    "streaming collector shutting down"
+                                );
+                                return;
+                            };
+
+                            match item {
+                                Some(Ok(event)) => {
+                                    metrics.items_processed_total.inc();
+                                    data_sink.handle_event(&event_context, &event);
+                                }
+                                Some(Err(e)) => {
+                                    metrics.stream_errors_total.inc();
+                                    metrics.reconnections_total.inc();
+                                    tracing::error!(
+                                        error = ?e,
+                                        collector_type,
+                                        endpoint = ?endpoint.addr,
+                                        "streaming collector stream error, reconnecting"
+                                    );
+                                    break;
+                                }
+                                None => {
+                                    tracing::info!(
+                                        collector_type,
+                                        endpoint = ?endpoint.addr,
+                                        "streaming collector stream ended, reconnecting"
+                                    );
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
 
-                // stream ended or errored -- transition to CONNECTING and retry
-                metrics.connection_state.set(STREAM_STATE_CONNECTING);
                 let delay = backoff.next_delay();
                 if cancel_clone
                     .run_until_cancelled(tokio::time::sleep(delay))
                     .await
                     .is_none()
                 {
-                    metrics.connection_state.set(STREAM_STATE_CLOSED);
                     return;
                 }
             }

@@ -24,7 +24,7 @@ use crate::collectors::{
     BackoffConfig, Collector, CollectorStartContext, FirmwareCollector, FirmwareCollectorConfig,
     LogsCollector, LogsCollectorConfig, NmxtCollector, NmxtCollectorConfig, NvueRestCollector,
     NvueRestCollectorConfig, SensorCollector, SensorCollectorConfig, SseLogCollector,
-    SseLogCollectorConfig,
+    SseLogCollectorConfig, StreamingCollectorStartContext,
 };
 use crate::config::{Configurable, LogCollectionMode};
 use crate::endpoint::{BmcEndpoint, EndpointMetadata};
@@ -100,10 +100,12 @@ pub(super) async fn spawn_collectors_for_endpoint(
                         endpoint_arc.clone(),
                         SseLogCollectorConfig,
                         data_sink,
-                        BackoffConfig::default(),
-                        collector_registry,
-                        ctx.client.clone(),
-                        &ctx.config,
+                        StreamingCollectorStartContext {
+                            backoff_config: BackoffConfig::default(),
+                            collector_registry,
+                            client: ctx.client.clone(),
+                            health_options: ctx.config.clone(),
+                        },
                     ))
                 } else {
                     tracing::warn!("SSE log collector requires a data sink, skipping");

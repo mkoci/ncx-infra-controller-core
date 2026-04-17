@@ -28,6 +28,7 @@ pub use nmxt::{NmxtCollector, NmxtCollectorConfig};
 pub use nvue::rest::collector::{NvueRestCollector, NvueRestCollectorConfig};
 pub use runtime::{
     BackoffConfig, Collector, CollectorStartContext, EventStream, ExponentialBackoff,
-    IterationResult, PeriodicCollector, StreamMetrics, StreamingCollector, open_sse_stream,
+    IterationResult, PeriodicCollector, StreamMetrics, StreamingCollector,
+    StreamingCollectorStartContext, open_sse_stream,
 };
 pub use sensors::{SensorCollector, SensorCollectorConfig};
