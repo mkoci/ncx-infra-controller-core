@@ -103,6 +103,9 @@ impl StaticEndpointSource {
                         Ok(machine_id) => Some(EndpointMetadata::Machine(MachineData {
                             machine_id,
                             machine_serial: machine.serial.clone(),
+                            slot_number: None,
+                            tray_index: None,
+                            nvlink_domain_uuid: None,
                         })),
                         Err(error) => {
                             tracing::warn!(
