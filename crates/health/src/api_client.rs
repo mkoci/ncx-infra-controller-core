@@ -68,6 +68,28 @@ impl CredentialProvider for ApiCredentialProvider {
     }
 }
 
+fn build_machine_data(machine: &rpc::forge::Machine) -> Option<MachineData> {
+    let machine_id = machine.id?;
+    let machine_serial = machine
+        .discovery_info
+        .as_ref()
+        .and_then(|info| info.dmi_data.as_ref())
+        .map(|dmi| dmi.chassis_serial.clone());
+    let placement = machine.placement_in_rack.as_ref();
+    let nvlink_domain_uuid = machine
+        .nvlink_info
+        .as_ref()
+        .and_then(|info| info.domain_uuid);
+
+    Some(MachineData {
+        machine_id,
+        machine_serial,
+        slot_number: placement.and_then(|placement| placement.slot_number),
+        tray_index: placement.and_then(|placement| placement.tray_index),
+        nvlink_domain_uuid,
+    })
+}
+
 impl ApiClientWrapper {
     pub fn new(root_ca: String, client_cert: String, client_key: String, api_url: &Url) -> Self {
         let client_config = ForgeClientConfig::new(
@@ -210,18 +232,7 @@ impl ApiClientWrapper {
             ));
         };
         let addr = BmcAddr::try_from(bmc_info)?;
-        let metadata = machine
-            .id
-            .zip(machine.discovery_info.clone())
-            .map(|(machine_id, info)| {
-                EndpointMetadata::Machine(MachineData {
-                    machine_id,
-                    machine_serial: info.dmi_data.map(|dmi| dmi.chassis_serial),
-                    slot_number: None,
-                    tray_index: None,
-                    nvlink_domain_uuid: None,
-                })
-            });
+        let metadata = build_machine_data(machine).map(EndpointMetadata::Machine);
 
         self.endpoint_with_auth(addr, metadata, machine.rack_id.clone())
             .await
@@ -450,5 +461,47 @@ impl From<rpc::forge::bmc_credentials::Type> for BmcCredentials {
             rpc::forge::bmc_credentials::Type::UsernamePassword(value) => value.into(),
             rpc::forge::bmc_credentials::Type::SessionToken(value) => value.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use carbide_uuid::nvlink::NvLinkDomainId;
+
+    use super::*;
+
+    #[test]
+    fn build_machine_data_forwards_slot_tray_and_nvlink_domain() {
+        let domain_uuid = NvLinkDomainId::nil();
+        let machine = rpc::forge::Machine {
+            id: Some(
+                "fm100htjtiaehv1n5vh67tbmqq4eabcjdng40f7jupsadbedhruh6rag1l0"
+                    .parse()
+                    .expect("valid machine id"),
+            ),
+            discovery_info: Some(rpc::machine_discovery::DiscoveryInfo {
+                dmi_data: Some(rpc::machine_discovery::DmiData {
+                    chassis_serial: "SN-001".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            placement_in_rack: Some(rpc::forge::PlacementInRack {
+                slot_number: Some(15),
+                tray_index: Some(5),
+            }),
+            nvlink_info: Some(rpc::forge::MachineNvLinkInfo {
+                domain_uuid: Some(domain_uuid),
+                gpus: Vec::new(),
+            }),
+            ..Default::default()
+        };
+
+        let machine_data = build_machine_data(&machine).expect("machine data");
+
+        assert_eq!(machine_data.machine_serial.as_deref(), Some("SN-001"));
+        assert_eq!(machine_data.slot_number, Some(15));
+        assert_eq!(machine_data.tray_index, Some(5));
+        assert_eq!(machine_data.nvlink_domain_uuid, Some(domain_uuid));
     }
 }
