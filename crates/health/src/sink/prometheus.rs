@@ -100,6 +100,15 @@ impl PrometheusSink {
         if let Some(serial) = context.serial_number() {
             labels.push((Cow::Borrowed("serial_number"), serial.to_string()));
         }
+        if let Some(slot) = context.slot_number() {
+            labels.push((Cow::Borrowed("slot"), slot.to_string()));
+        }
+        if let Some(tray) = context.tray_index() {
+            labels.push((Cow::Borrowed("tray"), tray.to_string()));
+        }
+        if let Some(domain) = context.nvlink_domain_uuid() {
+            labels.push((Cow::Borrowed("nvlink_domain"), domain.to_string()));
+        }
 
         labels
     }

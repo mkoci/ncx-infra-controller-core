@@ -62,6 +62,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use carbide_uuid::nvlink::NvLinkDomainId;
     use mac_address::MacAddress;
 
     use super::{
@@ -202,6 +203,66 @@ mod tests {
             .export_all()
             .expect("metrics export should work");
         assert!(export_after_metric.contains("test_sink_hw_sensor_temperature_celsius"));
+    }
+
+    #[tokio::test]
+    async fn test_prometheus_sink_emits_machine_metadata_labels() {
+        let metrics_manager =
+            Arc::new(MetricsManager::new("test").expect("should create metrics manager"));
+        let sink = PrometheusSink::new(metrics_manager.clone(), "test_sink")
+            .expect("sink should initialize");
+        let domain_uuid = NvLinkDomainId::nil();
+
+        let context = EventContext {
+            endpoint_key: "42:9e:b1:bd:9d:dd".to_string(),
+            addr: BmcAddr {
+                ip: "10.0.0.1".parse().expect("valid ip"),
+                port: Some(443),
+                mac: MacAddress::from_str("42:9e:b1:bd:9d:dd").unwrap(),
+            },
+            collector_type: "sensor_collector",
+            metadata: Some(EndpointMetadata::Machine(MachineData {
+                machine_id: "fm100htjtiaehv1n5vh67tbmqq4eabcjdng40f7jupsadbedhruh6rag1l0"
+                    .parse()
+                    .expect("valid machine id"),
+                machine_serial: None,
+                slot_number: Some(15),
+                tray_index: Some(5),
+                nvlink_domain_uuid: Some(domain_uuid),
+            })),
+            rack_id: None,
+        };
+
+        let metric_event = CollectorEvent::Metric(
+            SensorHealthData {
+                key: "metric_key".to_string(),
+                name: "hw_sensor".to_string(),
+                metric_type: "temperature".to_string(),
+                unit: "celsius".to_string(),
+                value: 42.0,
+                labels: vec![],
+                context: None,
+            }
+            .into(),
+        );
+
+        sink.handle_event(&context, &metric_event);
+
+        let exported = metrics_manager
+            .export_all()
+            .expect("metrics export should work");
+        assert!(
+            exported.contains("slot=\"15\""),
+            "missing slot label: {exported}"
+        );
+        assert!(
+            exported.contains("tray=\"5\""),
+            "missing tray label: {exported}"
+        );
+        assert!(
+            exported.contains("nvlink_domain=\"00000000-0000-0000-0000-000000000000\""),
+            "missing nvlink_domain label: {exported}"
+        );
     }
 
     #[tokio::test]
