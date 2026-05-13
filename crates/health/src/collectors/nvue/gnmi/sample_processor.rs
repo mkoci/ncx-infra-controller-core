@@ -38,6 +38,9 @@ impl GnmiSampleProcessor {
         resp: &proto::SubscribeResponse,
         stream_metrics: &GnmiStreamMetrics,
     ) {
+        // Response::Error is deprecated in gNMI >=0.3.0, but switches still
+        // emit it; suppress the warning so the backward-compat arm compiles.
+        #[allow(deprecated)]
         let notification = match &resp.response {
             Some(proto::subscribe_response::Response::Update(n)) => n,
             Some(proto::subscribe_response::Response::SyncResponse(_)) => return,
@@ -825,6 +828,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_process_subscribe_response_error_increments_counter() {
         let proc = test_processor();
         let metrics = test_stream_metrics();
