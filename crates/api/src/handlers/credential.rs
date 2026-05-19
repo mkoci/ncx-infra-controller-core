@@ -424,6 +424,37 @@ pub(crate) async fn get_bmc_credentals(
     }))
 }
 
+pub(crate) async fn get_switch_nvos_credentials(
+    api: &Api,
+    request: tonic::Request<rpc::GetSwitchNvosCredentialsRequest>,
+) -> Result<Response<rpc::GetBmcCredentialsResponse>, tonic::Status> {
+    crate::api::log_request_data(&request);
+
+    let req = request.into_inner();
+
+    let bmc_mac_address: mac_address::MacAddress = req
+        .bmc_mac_addr
+        .parse()
+        .map_err(CarbideError::MacAddressParseError)?;
+
+    let credentials = api
+        .credential_manager
+        .get_credentials(&CredentialKey::SwitchNvosAdmin { bmc_mac_address })
+        .await
+        .map_err(|e| CarbideError::internal(e.to_string()))?
+        .ok_or_else(|| CarbideError::internal("missing credentials".to_string()))?;
+
+    let Credentials::UsernamePassword { username, password } = credentials;
+
+    Ok(Response::new(rpc::GetBmcCredentialsResponse {
+        credentials: Some(rpc::BmcCredentials {
+            r#type: Some(rpc::bmc_credentials::Type::UsernamePassword(
+                rpc::UsernamePassword { username, password },
+            )),
+        }),
+    }))
+}
+
 async fn set_sitewide_bmc_root_credentials(
     api: &Api,
     password: String,

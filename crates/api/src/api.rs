@@ -366,6 +366,13 @@ impl Forge for Api {
         crate::handlers::switch::find_by_ids(self, request).await
     }
 
+    async fn find_switch_host_endpoints(
+        &self,
+        request: Request<rpc::SwitchesByIdsRequest>,
+    ) -> Result<Response<rpc::SwitchHostEndpointList>, Status> {
+        crate::handlers::switch::find_host_endpoints(self, request).await
+    }
+
     async fn delete_switch(
         &self,
         request: Request<rpc::SwitchDeletionRequest>,
@@ -897,6 +904,13 @@ impl Forge for Api {
         request: Request<rpc::GetBmcCredentialsRequest>,
     ) -> Result<Response<rpc::GetBmcCredentialsResponse>, Status> {
         crate::handlers::credential::get_bmc_credentals(self, request).await
+    }
+
+    async fn get_switch_nvos_credentials(
+        &self,
+        request: Request<rpc::GetSwitchNvosCredentialsRequest>,
+    ) -> Result<Response<rpc::GetBmcCredentialsResponse>, Status> {
+        crate::handlers::credential::get_switch_nvos_credentials(self, request).await
     }
 
     /// Network status of each managed host, as reported by forge-dpu-agent.

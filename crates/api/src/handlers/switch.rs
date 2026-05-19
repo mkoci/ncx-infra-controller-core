@@ -203,6 +203,47 @@ pub async fn find_by_ids(
     Ok(Response::new(rpc::SwitchList { switches }))
 }
 
+pub async fn find_host_endpoints(
+    api: &Api,
+    request: Request<rpc::SwitchesByIdsRequest>,
+) -> Result<Response<rpc::SwitchHostEndpointList>, Status> {
+    log_request_data(&request);
+
+    let switch_ids = request.into_inner().switch_ids;
+
+    let max_find_by_ids = api.runtime_config.max_find_by_ids as usize;
+    if switch_ids.len() > max_find_by_ids {
+        return Err(CarbideError::InvalidArgument(format!(
+            "no more than {max_find_by_ids} IDs can be accepted"
+        ))
+        .into());
+    } else if switch_ids.is_empty() {
+        return Err(
+            CarbideError::InvalidArgument("at least one ID must be provided".to_string()).into(),
+        );
+    }
+
+    let rows = db_switch::find_switch_endpoints_by_ids(&mut api.db_reader(), &switch_ids).await?;
+
+    let endpoints = rows
+        .into_iter()
+        .filter_map(|row| {
+            let (Some(host_mac), Some(host_ip)) = (row.nvos_mac, row.nvos_ip) else {
+                return None;
+            };
+
+            Some(rpc::SwitchHostEndpoint {
+                switch_id: Some(row.switch_id),
+                bmc_mac: row.bmc_mac.to_string(),
+                host_mac: host_mac.to_string(),
+                host_ip: host_ip.to_string(),
+            })
+        })
+        .collect();
+
+    Ok(Response::new(rpc::SwitchHostEndpointList { endpoints }))
+}
+
 pub async fn find_switch_state_histories(
     api: &Api,
     request: Request<rpc::SwitchStateHistoriesRequest>,
