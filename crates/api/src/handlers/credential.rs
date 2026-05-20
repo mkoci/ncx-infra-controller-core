@@ -409,7 +409,10 @@ pub(crate) async fn get_bmc_credentals(
         })
         .await
         .map_err(|e| CarbideError::internal(e.to_string()))?
-        .ok_or_else(|| CarbideError::internal("missing credentials".to_string()))?;
+        .ok_or_else(|| CarbideError::NotFoundError {
+            kind: "bmc_root_credentials",
+            id: req.mac_addr.clone(),
+        })?;
 
     let (username, password) = match credentials {
         Credentials::UsernamePassword { username, password } => (username, password),
@@ -442,7 +445,10 @@ pub(crate) async fn get_switch_nvos_credentials(
         .get_credentials(&CredentialKey::SwitchNvosAdmin { bmc_mac_address })
         .await
         .map_err(|e| CarbideError::internal(e.to_string()))?
-        .ok_or_else(|| CarbideError::internal("missing credentials".to_string()))?;
+        .ok_or_else(|| CarbideError::NotFoundError {
+            kind: "switch_nvos_credentials",
+            id: req.bmc_mac_addr.clone(),
+        })?;
 
     let Credentials::UsernamePassword { username, password } = credentials;
 
