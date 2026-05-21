@@ -27,6 +27,7 @@ use tonic::Code;
 
 use crate::handlers::credential::MAX_BGP_PASSWORD_LENGTH;
 use crate::tests::common::api_fixtures::create_test_env;
+use crate::tests::common::api_fixtures::site_explorer::new_switch;
 
 #[crate::sqlx_test]
 async fn test_create_host_uefi_credential_when_missing(pool: sqlx::PgPool) {
@@ -248,7 +249,12 @@ async fn test_create_bgp_credential_validates_max_password_length(pool: sqlx::Pg
 #[crate::sqlx_test]
 async fn test_get_switch_nvos_credentials(pool: sqlx::PgPool) -> eyre::Result<()> {
     let env = create_test_env(pool).await;
-    let bmc_mac_address = "00:11:22:33:44:55".parse()?;
+    let switch_id = new_switch(&env, Some("Switch1".to_string()), None).await?;
+    let bmc_mac_address = db::switch::find_switch_endpoints_by_ids(&env.pool, &[switch_id])
+        .await?
+        .first()
+        .expect("switch endpoint row")
+        .bmc_mac;
 
     env.test_credential_manager
         .set_credentials(
@@ -264,7 +270,7 @@ async fn test_get_switch_nvos_credentials(pool: sqlx::PgPool) -> eyre::Result<()
         .api
         .get_switch_nvos_credentials(tonic::Request::new(
             rpc::forge::GetSwitchNvosCredentialsRequest {
-                bmc_mac_addr: bmc_mac_address.to_string(),
+                switch_id: Some(switch_id),
             },
         ))
         .await?

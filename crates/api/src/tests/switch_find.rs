@@ -264,7 +264,7 @@ async fn test_find_switches_by_ids_response_fields(
 }
 
 #[crate::sqlx_test]
-async fn test_find_switch_host_endpoints_returns_resolved_nvos_host(
+async fn test_find_switches_by_ids_includes_resolved_nvos_info(
     pool: sqlx::PgPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let env = create_test_env(pool).await;
@@ -277,23 +277,62 @@ async fn test_find_switch_host_endpoints_returns_resolved_nvos_host(
 
     let response = env
         .api
-        .find_switch_host_endpoints(tonic::Request::new(rpc::forge::SwitchesByIdsRequest {
+        .find_switches_by_ids(tonic::Request::new(rpc::forge::SwitchesByIdsRequest {
             switch_ids: vec![switch_id],
         }))
         .await?
         .into_inner();
 
-    assert_eq!(response.endpoints.len(), 1);
-    assert_eq!(response.endpoints[0].switch_id, Some(switch_id));
-    assert_eq!(response.endpoints[0].bmc_mac, expected.bmc_mac.to_string());
-    assert_eq!(response.endpoints[0].host_mac, host_mac.to_string());
-    assert_eq!(response.endpoints[0].host_ip, host_ip.to_string());
+    assert_eq!(response.switches.len(), 1);
+    let switch = &response.switches[0];
+    assert_eq!(switch.id, Some(switch_id));
+    assert_eq!(
+        switch.bmc_info.as_ref().and_then(|info| info.mac.clone()),
+        Some(expected.bmc_mac.to_string())
+    );
+    assert_eq!(
+        switch.bmc_info.as_ref().and_then(|info| info.ip.clone()),
+        Some(expected.bmc_ip.to_string())
+    );
+
+    let nvos_info = switch.nvos_info.as_ref().expect("nvos info");
+    assert_eq!(nvos_info.mac, Some(host_mac.to_string()));
+    assert_eq!(nvos_info.ip, Some(host_ip.to_string()));
 
     Ok(())
 }
 
 #[crate::sqlx_test]
-async fn test_find_switch_host_endpoints_skips_switch_without_nvos_host(
+async fn test_find_switches_includes_resolved_nvos_info(
+    pool: sqlx::PgPool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let env = create_test_env(pool).await;
+    let switch_id = new_switch(&env, Some("Switch1".to_string()), None).await?;
+
+    let mut rows = db::switch::find_switch_endpoints_by_ids(&env.pool, &[switch_id]).await?;
+    let expected = rows.pop().expect("switch endpoint row");
+    let host_mac = expected.nvos_mac.expect("nvos mac");
+    let host_ip = expected.nvos_ip.expect("nvos ip");
+
+    let response = env
+        .api
+        .find_switches(tonic::Request::new(rpc::forge::SwitchQuery {
+            name: None,
+            switch_id: Some(switch_id),
+        }))
+        .await?
+        .into_inner();
+
+    assert_eq!(response.switches.len(), 1);
+    let nvos_info = response.switches[0].nvos_info.as_ref().expect("nvos info");
+    assert_eq!(nvos_info.mac, Some(host_mac.to_string()));
+    assert_eq!(nvos_info.ip, Some(host_ip.to_string()));
+
+    Ok(())
+}
+
+#[crate::sqlx_test]
+async fn test_find_switches_by_ids_returns_no_nvos_info_when_unresolved(
     pool: sqlx::PgPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let env = create_test_env(pool).await;
@@ -309,13 +348,14 @@ async fn test_find_switch_host_endpoints_skips_switch_without_nvos_host(
 
     let response = env
         .api
-        .find_switch_host_endpoints(tonic::Request::new(rpc::forge::SwitchesByIdsRequest {
+        .find_switches_by_ids(tonic::Request::new(rpc::forge::SwitchesByIdsRequest {
             switch_ids: vec![switch_id],
         }))
         .await?
         .into_inner();
 
-    assert!(response.endpoints.is_empty());
+    assert_eq!(response.switches.len(), 1);
+    assert!(response.switches[0].nvos_info.is_none());
 
     Ok(())
 }

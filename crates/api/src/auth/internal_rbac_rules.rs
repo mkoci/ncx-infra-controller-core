@@ -723,10 +723,6 @@ impl InternalRBACRules {
             "FindSwitchesByIds",
             vec![ForgeAdminCLI, Machineatron, Flow, Health],
         );
-        x.perm(
-            "FindSwitchHostEndpoints",
-            vec![ForgeAdminCLI, Machineatron, Flow, Health],
-        );
         x.perm("CreateSwitch", vec![ForgeAdminCLI, Machineatron]);
         x.perm("DeleteSwitch", vec![ForgeAdminCLI, Machineatron]);
         x.perm("AddExpectedSwitch", vec![ForgeAdminCLI, Machineatron, Flow]);

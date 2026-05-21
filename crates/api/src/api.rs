@@ -366,13 +366,6 @@ impl Forge for Api {
         crate::handlers::switch::find_by_ids(self, request).await
     }
 
-    async fn find_switch_host_endpoints(
-        &self,
-        request: Request<rpc::SwitchesByIdsRequest>,
-    ) -> Result<Response<rpc::SwitchHostEndpointList>, Status> {
-        crate::handlers::switch::find_host_endpoints(self, request).await
-    }
-
     async fn delete_switch(
         &self,
         request: Request<rpc::SwitchDeletionRequest>,

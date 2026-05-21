@@ -849,14 +849,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize)]",
         )
         .type_attribute(
-            "forge.SwitchHostEndpoint",
-            "#[derive(serde::Serialize)]",
-        )
-        .type_attribute(
-            "forge.SwitchHostEndpointList",
-            "#[derive(serde::Serialize)]",
-        )
-        .type_attribute(
             "forge.PlacementInRack",
             "#[derive(serde::Serialize)]",
         )

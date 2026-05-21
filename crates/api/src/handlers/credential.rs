@@ -434,11 +434,33 @@ pub(crate) async fn get_switch_nvos_credentials(
     crate::api::log_request_data(&request);
 
     let req = request.into_inner();
+    let switch_id = req
+        .switch_id
+        .ok_or_else(|| CarbideError::InvalidArgument("switch_id is required".to_string()))?;
 
-    let bmc_mac_address: mac_address::MacAddress = req
-        .bmc_mac_addr
-        .parse()
-        .map_err(CarbideError::MacAddressParseError)?;
+    let bmc_mac_address = {
+        let mut txn = api.txn_begin().await?;
+        let switches = db::switch::find_by(
+            &mut txn,
+            db::ObjectColumnFilter::One(db::switch::IdColumn, &switch_id),
+        )
+        .await?;
+        let _ = txn.rollback().await;
+
+        let switch = switches
+            .first()
+            .ok_or_else(|| CarbideError::NotFoundError {
+                kind: "switch",
+                id: switch_id.to_string(),
+            })?;
+
+        switch
+            .bmc_mac_address
+            .ok_or_else(|| CarbideError::NotFoundError {
+                kind: "switch_bmc_mac_address",
+                id: switch_id.to_string(),
+            })?
+    };
 
     let credentials = api
         .credential_manager
@@ -447,7 +469,7 @@ pub(crate) async fn get_switch_nvos_credentials(
         .map_err(|e| CarbideError::internal(e.to_string()))?
         .ok_or_else(|| CarbideError::NotFoundError {
             kind: "switch_nvos_credentials",
-            id: req.bmc_mac_addr.clone(),
+            id: switch_id.to_string(),
         })?;
 
     let Credentials::UsernamePassword { username, password } = credentials;

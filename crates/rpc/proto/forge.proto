@@ -101,7 +101,6 @@ service Forge {
   rpc FindSwitches(SwitchQuery) returns (SwitchList);
   rpc FindSwitchIds(SwitchSearchFilter) returns (SwitchIdList);
   rpc FindSwitchesByIds(SwitchesByIdsRequest) returns (SwitchList);
-  rpc FindSwitchHostEndpoints(SwitchesByIdsRequest) returns (SwitchHostEndpointList);
   rpc DeleteSwitch(SwitchDeletionRequest) returns (SwitchDeletionResult);
   // Force deletes a Switch and optionally its associated interfaces from the database.
   rpc AdminForceDeleteSwitch(AdminForceDeleteSwitchRequest) returns (AdminForceDeleteSwitchResponse);
@@ -2136,6 +2135,9 @@ message Switch {
   optional PlacementInRack placement_in_rack = 11;
   reserved 12, 13;
   bool is_primary = 14;
+
+  // NVOS host endpoint
+  BmcInfo nvos_info = 15;
 }
 
 message SwitchList {
@@ -2200,17 +2202,6 @@ message SwitchSearchFilter {
 
 message SwitchesByIdsRequest {
   repeated common.SwitchId switch_ids = 1;
-}
-
-message SwitchHostEndpoint {
-  common.SwitchId switch_id = 1;
-  string bmc_mac = 2;
-  string host_mac = 3;
-  string host_ip = 4;
-}
-
-message SwitchHostEndpointList {
-  repeated SwitchHostEndpoint endpoints = 1;
 }
 
 message ExpectedSwitch {
@@ -3762,7 +3753,7 @@ message GetBmcCredentialsRequest {
 }
 
 message GetSwitchNvosCredentialsRequest {
-  string bmc_mac_addr = 1;
+  common.SwitchId switch_id = 1;
 }
 
 message GetBmcCredentialsResponse {
